@@ -15,6 +15,8 @@
  */
 package com.example.android.miwok;
 
+import android.content.Context;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -27,10 +29,40 @@ import java.util.List;
 
 public class FamilyActivity extends AppCompatActivity {
 
+    private MediaPlayer mMediaPlayer;
+    AudioManager mAudioManager;
+    AudioManager.OnAudioFocusChangeListener afChangeListener =
+            new AudioManager.OnAudioFocusChangeListener() {
+                public void onAudioFocusChange(int focusChange) {
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
+                            focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+                        // Pause playback
+                        mMediaPlayer.pause();
+                        // rewind
+                        mMediaPlayer.seekTo(0);
+                    }else if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+                        releaseMediaPlayer();
+                    }else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        // Your app has been granted audio focus again
+                        // Raise volume to normal, restart playback if necessary
+                        mMediaPlayer.start();
+                    }
+                }
+            };
+
+    private MediaPlayer.OnCompletionListener mCompletionListener = (mediaPlayer) -> {
+        if (mediaPlayer != null) {
+            mediaPlayer.release();
+            mediaPlayer = null;
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.word_list);
+
+        mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
         List<Word> words = new ArrayList<>();
         words.add( new Word("father", "әpә", R.drawable.family_father, R.raw.family_father) );
@@ -53,11 +85,37 @@ public class FamilyActivity extends AppCompatActivity {
                                     long id) {
                 // TODO Auto-generated method stub
                 //Log.d("NUM_MSG", arg1.toString() + " - " + position);
-                //MediaPlayer mediaPlayer = MediaPlayer.create(NumbersActivity.this, R.raw.number_one);
                 Word selectedWord = words.get(position);
-                MediaPlayer mediaPlayer = MediaPlayer.create(FamilyActivity.this, selectedWord.getAudioResId());
-                mediaPlayer.start();
+                // Request audio focus for playback
+                int result = mAudioManager.requestAudioFocus(afChangeListener,
+                        // Use the music stream.
+                        AudioManager.STREAM_MUSIC,
+                        // Request permanent focus.
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+
+                if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    releaseMediaPlayer();
+                    mMediaPlayer = MediaPlayer.create(FamilyActivity.this, selectedWord.getAudioResId());
+                    mMediaPlayer.start();
+                    mMediaPlayer.setOnCompletionListener(mCompletionListener);
+                }
             }
         });
     }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // why helper method? consistent resource release logic within activity
+        releaseMediaPlayer();
+    }
+
+    private void releaseMediaPlayer() {
+        if (mMediaPlayer != null) {
+            mMediaPlayer.release();
+            mAudioManager.abandonAudioFocus(afChangeListener);
+            mMediaPlayer = null;
+        }
+    }
+
 }
